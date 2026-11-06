@@ -1,0 +1,20 @@
+# Build artifacts / local install tarballs (regenerate with `pnpm pack`)
+*.tgz
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local scratch / probe scripts
+__*.cjs
+*.log

@@ -1,0 +1,6 @@
+# dsh-sidebar-shortcut: mounts a left-sidebar shortcut manager. The client half
+# registers one left-sidebar entry per selected plugin; the host half does not
+# need extra services, so this is a minimal insert.
+- insert:
+    - id: dsh-sidebar-shortcut
+      name: dsh-sidebar-shortcut
