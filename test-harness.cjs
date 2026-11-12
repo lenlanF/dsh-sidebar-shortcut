@@ -23,6 +23,7 @@ class ComponentStub {
 const ReactStub = {
   createElement,
   Component: ComponentStub,
+  Fragment: "Fragment",
   useState: (v) => [v, () => {}],
   useEffect: () => {},
   useCallback: (f) => f,
@@ -81,6 +82,9 @@ const ctx = {
     },
     register: (opts, comp) => {
       state.registered.push({ slot: opts.name, id: opts.id });
+      if (opts.name === "settings.section" && opts.id === "dsh-sidebar-shortcut") {
+        state.settingsComp = comp;
+      }
       return () => {};
     },
     subscribe: () => () => {},
@@ -196,6 +200,37 @@ try {
   threw = true;
 }
 if (threw) problems.push("apply() threw on a broken ctx (should be swallowed)");
+
+// ---- UI render smoke test: the redesigned settings card must render all
+// three tabs without throwing (client React copy forbids hooks, class comp). ---
+function treeText(node) {
+  if (node == null || node === false) return "";
+  if (Array.isArray(node)) return node.map(treeText).join(" ");
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (typeof node === "object" && node.children) return treeText(node.children);
+  return "";
+}
+if (!state.settingsComp) {
+  problems.push("settings.section component factory not captured");
+} else {
+  for (const tab of ["plugins", "groups", "entries"]) {
+    try {
+      const el = state.settingsComp(); // () => h(SettingsSection, { api })
+      const Inst = el.type;
+      const inst = new Inst(el.props);
+      inst.state = Object.assign({}, inst.state, { activeTab: tab, bundles: [
+        { name: "dsh-better-sidebar", official: false },
+      ] });
+      const out = inst.render();
+      const txt = treeText(out);
+      if (!txt.includes("侧栏快捷")) problems.push("render(" + tab + "): hero title missing");
+      if (!txt.includes("保存")) problems.push("render(" + tab + "): save bar missing");
+      console.log("render tab '" + tab + "' ok, text length=" + txt.length);
+    } catch (e) {
+      problems.push("render(" + tab + ") threw: " + (e && e.message));
+    }
+  }
+}
 
 console.log("\n--- verdict ---");
 if (problems.length) {
