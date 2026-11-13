@@ -30,7 +30,7 @@ const ReactStub = {
   useRef: (v) => ({ current: v }),
 };
 
-const src = fs.readFileSync("F:/Dsh/dsh-sidebar-shortcut/lib/client.js", "utf8");
+const src = fs.readFileSync(__dirname + "/lib/client.js", "utf8");
 vm.runInThisContext(src, { filename: "client.js" });
 
 if (!captured) throw new Error("FAIL: __ModuleLoader__.load not called");
@@ -48,16 +48,18 @@ console.log("inject:", JSON.stringify(mod.inject));
 // ---- fake client context -------------------------------------------------
 const state = { slotsInjected: [], registered: [], effects: 0, locale: [], disposed: 0 };
 
+let installedBundles = [
+  { name: "dsh-better-sidebar", official: false },
+  { name: "@deepseek-ai/dsh-base", official: true },
+];
+const changedListeners = [];
 const fakeRemote = {
   pluginManager: {
-    listBundles: () =>
-      Promise.resolve({
-        ok: true,
-        value: [
-          { name: "dsh-better-sidebar", official: false },
-          { name: "@deepseek-ai/dsh-base", official: true },
-        ],
-      }),
+    listBundles: () => Promise.resolve({ ok: true, value: installedBundles.slice() }),
+  },
+  $on: (event, cb) => {
+    if (event === "plugin-manager/changed") changedListeners.push(cb);
+    return () => {};
   },
 };
 const fakeReflect = {
@@ -76,16 +78,29 @@ const ctx = {
   slots: {
     inject: (slotName, factoryFn) => {
       state.slotsInjected.push(slotName);
+      const disposers = [];
+      state._currentInjectDisposers = disposers;
       factoryFn();
-      // Real app.asar returns a DISPOSE FUNCTION (not an object).
-      return () => { state.disposed++; };
+      state._currentInjectDisposers = null;
+      // Real app.asar returns a DISPOSE FUNCTION (not an object). Calling it
+      // disposes every register() made inside this inject.
+      return () => {
+        state.disposed++;
+        for (const d of disposers.splice(0)) { try { d(); } catch (e) {} }
+      };
     },
     register: (opts, comp) => {
-      state.registered.push({ slot: opts.name, id: opts.id });
+      const rec = { slot: opts.name, id: opts.id };
+      state.registered.push(rec);
       if (opts.name === "settings.section" && opts.id === "dsh-sidebar-shortcut") {
         state.settingsComp = comp;
       }
-      return () => {};
+      const disposer = () => {
+        const i = state.registered.indexOf(rec);
+        if (i >= 0) state.registered.splice(i, 1);
+      };
+      if (state._currentInjectDisposers) state._currentInjectDisposers.push(disposer);
+      return disposer;
     },
     subscribe: () => () => {},
     entries: (key) => {
@@ -172,7 +187,7 @@ console.log("migrated panellist ids:", JSON.stringify(migIds));
 // ---- regression: kill() must handle the FUNCTION-shaped dispose fiber that
 // app.asar actually returns (the old `.dispose()` call silently did nothing,
 // which is why the group was uncontrollable and rows never got removed). ----
-const clientSrc = require("fs").readFileSync("F:/Dsh/dsh-sidebar-shortcut/lib/client.js", "utf8");
+const clientSrc = require("fs").readFileSync(__dirname + "/lib/client.js", "utf8");
 if (!/typeof fiber === "function"\) fiber\(\)/.test(clientSrc))
   problems.push("kill() does not call function-shaped dispose fibers");
 if (/api\._fibers\[name\]\.dispose\(\)/.test(clientSrc))
@@ -232,9 +247,48 @@ if (!state.settingsComp) {
   }
 }
 
-console.log("\n--- verdict ---");
-if (problems.length) {
-  problems.forEach((p) => console.log("FAIL:", p));
-  process.exit(1);
+// ---- uninstall regression: a plugin removed from listBundles must lose its
+// sidebar row and its saved selection, WITHOUT a restart. ----
+storage["dsh-sidebar-shortcut:selected"] = JSON.stringify({
+  "dsh-better-sidebar": { label: "A", icon: "", group: "gA" },
+  "ghost-plugin": { label: "G", icon: "", group: "gA" },
+});
+storage["dsh-sidebar-shortcut:groups"] = JSON.stringify({
+  enabled: false, defs: [{ id: "gA", name: "A", collapsed: false }], order: ["gA"],
+});
+delete storage["dsh-sidebar-shortcut:external"];
+installedBundles = [
+  { name: "dsh-better-sidebar", official: false },
+  { name: "@deepseek-ai/dsh-base", official: true },
+]; // ghost-plugin is "uninstalled"
+state.registered.length = 0;
+state.slotsInjected.length = 0;
+mod.apply(ctx);
+const pending = [];
+for (const cb of changedListeners) {
+  try { const r = cb(); if (r && typeof r.then === "function") pending.push(r); } catch (e) {}
 }
-console.log("ALL CHECKS PASSED");
+Promise.all(pending).then(() => {
+  const ids = state.registered.filter((r) => r.slot === "sidebar.panellist").map((r) => r.id);
+  if (ids.includes("sidebar-shortcut:ghost-plugin"))
+    problems.push("uninstalled plugin still has a sidebar row");
+  if (!ids.includes("sidebar-shortcut:dsh-better-sidebar"))
+    problems.push("installed plugin lost its sidebar row after prune");
+  let persisted;
+  try { persisted = JSON.parse(storage["dsh-sidebar-shortcut:selected"] || "{}"); } catch (e) { persisted = {}; }
+  if (persisted["ghost-plugin"])
+    problems.push("uninstalled plugin still persisted in localStorage");
+  if (!persisted["dsh-better-sidebar"])
+    problems.push("installed plugin was wrongly pruned from localStorage");
+  console.log("uninstall regression ids:", JSON.stringify(ids));
+  finish();
+}).catch((e) => { problems.push("uninstall test error: " + e); finish(); });
+
+function finish() {
+  console.log("\n--- verdict ---");
+  if (problems.length) {
+    problems.forEach((p) => console.log("FAIL:", p));
+    process.exit(1);
+  }
+  console.log("ALL CHECKS PASSED");
+}

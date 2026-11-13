@@ -15,6 +15,17 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Local scratch / probe scripts
+# Local scratch / probe / audit scripts & notes
 __*.cjs
+__*.py
+__*.txt
 *.log
+*.bak
+VERIFY.md
+*audit*
+*review*
+*勘察*
+*笔记*
+
+# Machine-specific local install helpers
+rollback-*.cmd

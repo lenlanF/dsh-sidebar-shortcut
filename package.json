@@ -1,12 +1,11 @@
 {
   "name": "dsh-sidebar-shortcut",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "DSH client plugin: create customizable, collapsible left-sidebar shortcut groups for installed plugins and existing sidebar entries.",
   "repository": {
     "type": "git",
     "url": "https://github.com/lenlanF/dsh-sidebar-shortcut.git"
   },
-  "author": "lenlanF <1154688571@qq.com>",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
