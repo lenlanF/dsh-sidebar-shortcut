@@ -281,6 +281,30 @@ Promise.all(pending).then(() => {
   if (!persisted["dsh-better-sidebar"])
     problems.push("installed plugin was wrongly pruned from localStorage");
   console.log("uninstall regression ids:", JSON.stringify(ids));
+
+  // ---- custom order: sidebar rows must follow the saved order list --------
+  storage["dsh-sidebar-shortcut:selected"] = JSON.stringify({
+    "dsh-better-sidebar": { label: "A", icon: "", group: "gA" },
+    "@deepseek-ai/dsh-base": { label: "B", icon: "", group: "gA" },
+  });
+  storage["dsh-sidebar-shortcut:groups"] = JSON.stringify({
+    enabled: false, defs: [{ id: "gA", name: "A", collapsed: false }], order: ["gA"],
+  });
+  // Reverse natural order explicitly.
+  storage["dsh-sidebar-shortcut:order"] = JSON.stringify(["@deepseek-ai/dsh-base", "dsh-better-sidebar"]);
+  state.registered.length = 0;
+  mod.apply(ctx);
+  const orderIds = state.registered
+    .filter((r) => r.slot === "sidebar.panellist" && r.id)
+    .map((r) => r.id);
+  const iBase = orderIds.indexOf("sidebar-shortcut:@deepseek-ai/dsh-base");
+  const iBetter = orderIds.indexOf("sidebar-shortcut:dsh-better-sidebar");
+  if (iBase < 0 || iBetter < 0) {
+    problems.push("order test: both rows should be registered");
+  } else if (!(iBase < iBetter)) {
+    problems.push("custom order not applied: expected dsh-base before better-sidebar");
+  }
+  console.log("order test ids:", JSON.stringify(orderIds));
   finish();
 }).catch((e) => { problems.push("uninstall test error: " + e); finish(); });
 
